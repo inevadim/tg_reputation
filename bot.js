@@ -2,6 +2,19 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
 
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Бот работает!');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🌐 Сервер запущен на порту ${PORT}`);
+});
+
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
