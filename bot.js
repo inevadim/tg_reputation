@@ -5,7 +5,9 @@ const { Pool } = require('pg');
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: false,
+  ssl: {
+    rejectUnauthorized: false, // нужно для Render, чтобы принять их сертификат
+  },
 });
 
 // ✅ Автосоздание таблиц при запуске
