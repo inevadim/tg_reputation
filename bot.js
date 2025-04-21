@@ -198,40 +198,6 @@ bot.command('test', async (ctx) => {
   }
 });
 
-
-bot.command('top', async (ctx) => {
-  const res = await pool.query('SELECT * FROM users ORDER BY rep DESC LIMIT 10');
-  if (res.rowCount === 0) return ctx.reply('Нет данных.');
-  let msg = '🏆 Топ пользователей:\n\n';
-  res.rows.forEach((u, i) => {
-    const rank = getRank(u.rep);
-    msg += `${i + 1}. ${u.name} — ${u.rep} очков (${rank.emoji} ${rank.name})\n`;
-  });
-  ctx.reply(msg);
-});
-
-bot.command('info', (ctx) => {
-  ctx.reply(`
-📘 Команды:
-
-👤 /me — информация
-👥 /vozroditsya — регистрация
-📊 /status — статус и достижения
-🏆 /top — топ пользователей
-
-🔧 Админ-команды:
-🧩 /vostat <id> — вручную добавить пользователя
-➕ /rep <tg_id>
-➖ /unrep <tg_id>
-🗑 /delete <tg_id> — удалить пользователя
-📋 /bd — список пользователей
-📜 /log — последние действия
-📏 /rangedit <tg_id> <очки>
-🧪 /test — тест БД
-ℹ️ /info — команды
-  `);
-});
-
 // 💬 Реплай: plus / minus
 bot.on('text', async (ctx) => {
   if (!await isAdmin(ctx)) return;
@@ -273,6 +239,42 @@ bot.command('log', async (ctx) => {
   const logs = res.rows.map(log => `• ${log.action} — Target: ${log.target_id}, By: ${log.actor_id}, Время: ${log.timestamp.toLocaleString()}`).join('\n');
   ctx.reply('📋 Последние действия:\n' + logs);
 });
+
+
+bot.command('top', async (ctx) => {
+  const res = await pool.query('SELECT * FROM users ORDER BY rep DESC LIMIT 10');
+  if (res.rowCount === 0) return ctx.reply('Нет данных.');
+  let msg = '🏆 Топ пользователей:\n\n';
+  res.rows.forEach((u, i) => {
+    const rank = getRank(u.rep);
+    msg += `${i + 1}. ${u.name} — ${u.rep} очков (${rank.emoji} ${rank.name})\n`;
+  });
+  ctx.reply(msg);
+});
+
+bot.command('info', (ctx) => {
+  ctx.reply(`
+📘 Команды:
+
+👤 /me — информация
+👥 /vozroditsya — регистрация
+📊 /status — статус и достижения
+🏆 /top — топ пользователей
+
+🔧 Админ-команды:
+🧩 /vostat <id> — вручную добавить пользователя
+➕ /rep <tg_id>
+➖ /unrep <tg_id>
+🗑 /delete <tg_id> — удалить пользователя
+📋 /bd — список пользователей
+📜 /log — последние действия
+📏 /rangedit <tg_id> <очки>
+🧪 /test — тест БД
+ℹ️ /info — команды
+  `);
+});
+
+
 
 bot.launch();
 console.log('✅ Бот запущен');
