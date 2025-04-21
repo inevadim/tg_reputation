@@ -233,7 +233,7 @@ bot.command('info', (ctx) => {
 });
 
 // 💬 Реплай: plus / minus
-bot.on('text', async ctx => {
+bot.on('text', async (ctx) => {
   if (!await isAdmin(ctx)) return;
   const reply = ctx.message.reply_to_message;
   if (!reply) return;
@@ -257,7 +257,7 @@ bot.on('text', async ctx => {
 
 
 // 📋 /bd
-bot.command('bd', async ctx => {
+bot.command('bd', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply('Только админ.');
   const res = await pool.query('SELECT * FROM users ORDER BY id');
   if (res.rowCount === 0) return ctx.reply('Пользователи не найдены.');
@@ -266,7 +266,7 @@ bot.command('bd', async ctx => {
 });
 
 // 🧾 /log
-bot.command('log', async ctx => {
+bot.command('log', async (ctx) => {
   if (!await isAdmin(ctx)) return ctx.reply('Только админ.');
   const res = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 10');
   if (res.rowCount === 0) return ctx.reply('Пока лог пуст.');
