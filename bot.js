@@ -239,7 +239,26 @@ bot.command('test', async (ctx) => {
 //   return; // ВАЖНО: чтобы не блокировать другие команды!
 // });
 
+bot.use(async (ctx, next) => {
+  if (ctx.message?.reply_to_message && await isAdmin(ctx)) {
+    const text = ctx.message.text.toLowerCase();
+    const targetId = ctx.message.reply_to_message.from.id;
+    const userCheck = await pool.query('SELECT * FROM users WHERE tg_id = $1', [targetId]);
+    if (userCheck.rowCount > 0) {
+      if (text === 'plus') {
+        ctx.state.command = { raw: `/rep ${targetId}` };
+        ctx.message.text = `/rep ${targetId}`;
+        return bot.handleUpdate(ctx.update);
+      } else if (text === 'minus') {
+        ctx.state.command = { raw: `/unrep ${targetId}` };
+        ctx.message.text = `/unrep ${targetId}`;
+        return bot.handleUpdate(ctx.update);
+      }
+    }
+  }
 
+  return next(); // <-- чтобы другие команды не блокировались!
+});
 
 // 📋 /bd
 bot.command('bd', async (ctx) => {
