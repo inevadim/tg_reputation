@@ -217,27 +217,27 @@ bot.command('test', async (ctx) => {
 });
 
 // 💬 Реплай: plus / minus
-bot.on('text', async (ctx) => {
-  if (!await isAdmin(ctx)) return;
-  const reply = ctx.message.reply_to_message;
-  if (!reply) return;
+// bot.on('text', async (ctx) => {
+//   if (!await isAdmin(ctx)) return;
+//   const reply = ctx.message.reply_to_message;
+//   if (!reply) return;
 
-  const text = ctx.message.text.toLowerCase();
-  const targetId = reply.from.id;
-  const userCheck = await pool.query('SELECT * FROM users WHERE tg_id = $1', [targetId]);
-  if (userCheck.rowCount === 0) return;
+//   const text = ctx.message.text.toLowerCase();
+//   const targetId = reply.from.id;
+//   const userCheck = await pool.query('SELECT * FROM users WHERE tg_id = $1', [targetId]);
+//   if (userCheck.rowCount === 0) return;
 
-  if (text === 'plus') {
-    ctx.state.command = { raw: `/rep ${targetId}` };
-    ctx.message.text = `/rep ${targetId}`;
-    bot.handleUpdate(ctx.update);
-  } else if (text === 'minus') {
-    ctx.state.command = { raw: `/unrep ${targetId}` };
-    ctx.message.text = `/unrep ${targetId}`;
-    bot.handleUpdate(ctx.update);
-  }
-  return; // ВАЖНО: чтобы не блокировать другие команды!
-});
+//   if (text === 'plus') {
+//     ctx.state.command = { raw: `/rep ${targetId}` };
+//     ctx.message.text = `/rep ${targetId}`;
+//     bot.handleUpdate(ctx.update);
+//   } else if (text === 'minus') {
+//     ctx.state.command = { raw: `/unrep ${targetId}` };
+//     ctx.message.text = `/unrep ${targetId}`;
+//     bot.handleUpdate(ctx.update);
+//   }
+//   return; // ВАЖНО: чтобы не блокировать другие команды!
+// });
 
 
 
