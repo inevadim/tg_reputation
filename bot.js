@@ -67,6 +67,9 @@ function getAchievements(rep) {
 })();
 
 async function isAdmin(ctx) {
+  // В личных чатах всегда разрешаем (для отладки)
+  if (ctx.chat.type === 'private') return true;
+
   try {
     const status = await ctx.getChatMember(ctx.from.id);
     return ['administrator', 'creator'].includes(status.status);
@@ -104,6 +107,21 @@ async function updateRep(ctx, tg_id, delta) {
     client.release();
   }
 }
+
+bot.command('delete', async (ctx) => {
+  if (!(await isAdmin(ctx))) return ctx.reply('⛔ Только админы!');
+  const [, id] = ctx.message.text.split(' ');
+  if (!id) return ctx.reply('Формат: /delete <tg_id>');
+
+  const client = await pool.connect();
+  try {
+    const res = await client.query('DELETE FROM users WHERE tg_id = $1 RETURNING *', [id]);
+    if (res.rowCount === 0) return ctx.reply('Пользователь не найден.');
+    ctx.reply(`🗑 Пользователь ${res.rows[0].name} (${id}) удалён.`);
+  } finally {
+    client.release();
+  }
+});
 
 bot.command('vozroditsya', async (ctx) => {
   const client = await pool.connect();
