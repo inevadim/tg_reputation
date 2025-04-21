@@ -34,9 +34,10 @@ function getRank(rep) {
 // 🎖 Простейшая система достижений
 function getAchievements(rep) {
   const achievements = [];
-  if (rep >= 10) achievements.push('🏅 Достижение: 10 очков');
-  if (rep >= 50) achievements.push('🎖 Достижение: Полвека');
-  if (rep >= 80) achievements.push('👑 Достижение: Вершина');
+  if (rep >= 10) achievements.push('🥉 Первое повышение');
+  if (rep >= 30) achievements.push('🥈 Продвинутый');
+  if (rep >= 50) achievements.push('🥇 Легенда');
+  if (rep >= 80) achievements.push('🏆 Тень Монарха');
   return achievements;
 }
 
@@ -218,6 +219,56 @@ bot.command('info', (ctx) => {
 🧪 /test — тест БД
 ℹ️ /info — команды
   `);
+});
+
+// 💬 Реплай: plus / minus
+bot.on('text', async ctx => {
+  if (!await isAdmin(ctx)) return;
+  const reply = ctx.message.reply_to_message;
+  if (!reply) return;
+
+  const text = ctx.message.text.toLowerCase();
+  const targetId = reply.from.id;
+  const userCheck = await pool.query('SELECT * FROM users WHERE tg_id = $1', [targetId]);
+  if (userCheck.rowCount === 0) return;
+
+  if (text === 'plus') {
+    ctx.state.command = { raw: `/rep ${targetId}` };
+    ctx.message.text = `/rep ${targetId}`;
+    bot.handleUpdate(ctx.update);
+  } else if (text === 'minus') {
+    ctx.state.command = { raw: `/unrep ${targetId}` };
+    ctx.message.text = `/unrep ${targetId}`;
+    bot.handleUpdate(ctx.update);
+  }
+});
+
+// 🧪 /test
+bot.command('test', async ctx => {
+  try {
+    await pool.query('SELECT NOW()');
+    ctx.reply('✅ БД работает');
+  } catch {
+    ctx.reply('❌ Ошибка подключения к БД');
+  }
+});
+
+// 📋 /bd
+bot.command('bd', async ctx => {
+  if (!await isAdmin(ctx)) return ctx.reply('Только админ.');
+  const res = await pool.query('SELECT * FROM users ORDER BY id');
+  if (res.rowCount === 0) return ctx.reply('Пользователи не найдены.');
+  const users = res.rows.map(u => `${u.name} (${u.tg_id}) — Реп: ${u.rep}`).join('\n');
+  ctx.reply('📋 Список пользователей:\n' + users);
+});
+
+// 🧾 /log
+bot.command('log', async ctx => {
+  if (!await isAdmin(ctx)) return ctx.reply('Только админ.');
+  const res = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 10');
+  if (res.rowCount === 0) return ctx.reply('Пока лог пуст.');
+  const logs = res.rows.map(log => `• ${log.action} — Target: ${log.target_id}, By: ${log.actor_id}, Время: ${log.timestamp.toLocaleString()}`).join('\n');
+  ctx.reply('📋 Последние действия:\n' + logs);
 });
 
 bot.launch();
