@@ -188,6 +188,17 @@ bot.command('rangedit', async (ctx) => {
   }
 });
 
+// 🧪 /test
+bot.command('test', async (ctx) => {
+  try {
+    await pool.query('SELECT NOW()');
+    ctx.reply('✅ БД работает');
+  } catch {
+    ctx.reply('❌ Ошибка подключения к БД');
+  }
+});
+
+
 bot.command('top', async (ctx) => {
   const res = await pool.query('SELECT * FROM users ORDER BY rep DESC LIMIT 10');
   if (res.rowCount === 0) return ctx.reply('Нет данных.');
@@ -243,15 +254,7 @@ bot.on('text', async ctx => {
   }
 });
 
-// 🧪 /test
-bot.command('test', async ctx => {
-  try {
-    await pool.query('SELECT NOW()');
-    ctx.reply('✅ БД работает');
-  } catch {
-    ctx.reply('❌ Ошибка подключения к БД');
-  }
-});
+
 
 // 📋 /bd
 bot.command('bd', async ctx => {
