@@ -271,7 +271,7 @@ bot.command('top', async (ctx) => {
 });
 
 bot.command('info', async (ctx) => {
-  ctx.reply(`
+  await ctx.reply(`
 📘 Команды:
 
 👤 /me — информация
