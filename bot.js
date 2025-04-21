@@ -252,7 +252,7 @@ bot.command('top', async (ctx) => {
   ctx.reply(msg);
 });
 
-bot.command('info', (ctx) => {
+bot.command('info', async (ctx) => {
   ctx.reply(`
 📘 Команды:
 
