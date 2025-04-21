@@ -244,21 +244,23 @@ bot.use(async (ctx, next) => {
     const text = ctx.message.text.toLowerCase();
     const targetId = ctx.message.reply_to_message.from.id;
     const userCheck = await pool.query('SELECT * FROM users WHERE tg_id = $1', [targetId]);
+
     if (userCheck.rowCount > 0) {
       if (text === 'plus') {
-        ctx.state.command = { raw: `/rep ${targetId}` };
-        ctx.message.text = `/rep ${targetId}`;
-        return bot.handleUpdate(ctx.update);
+        // Вызовем функцию обновления репутации для пользователя
+        await updateRep(ctx, targetId, 1); // Увеличиваем репутацию
+        return;
       } else if (text === 'minus') {
-        ctx.state.command = { raw: `/unrep ${targetId}` };
-        ctx.message.text = `/unrep ${targetId}`;
-        return bot.handleUpdate(ctx.update);
+        // Вызовем функцию обновления репутации для пользователя
+        await updateRep(ctx, targetId, -1); // Уменьшаем репутацию
+        return;
       }
     }
   }
 
-  return next(); // <-- чтобы другие команды не блокировались!
+  return next(); // Убедимся, что другие команды продолжают работать
 });
+
 
 // 📋 /bd
 bot.command('bd', async (ctx) => {
