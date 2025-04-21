@@ -2,287 +2,222 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
 
-const express = require('express');
-const app = express();
-
-app.get('/', (req, res) => {
-  res.send('Бот работает!');
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🌐 Сервер запущен на порту ${PORT}`);
-});
-
-
 const bot = new Telegraf(process.env.BOT_TOKEN);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, // нужно для Render, чтобы принять их сертификат
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
-// ✅ Автосоздание таблиц при запуске
-(async () => {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        tg_id BIGINT UNIQUE NOT NULL,
-        rep INTEGER DEFAULT 0
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS logs (
-        id SERIAL PRIMARY KEY,
-        action TEXT,
-        target_id BIGINT,
-        actor_id BIGINT,
-        timestamp TIMESTAMP DEFAULT NOW()
-      );
-    `);
-    console.log('✅ Таблицы users и logs проверены/созданы');
-  } catch (err) {
-    console.error('❌ Ошибка при создании таблиц', err);
-  } finally {
-    client.release();
-  }
-})();
+// Визуальные ранги с эмодзи
+const rankLevels = [
+  { name: 'E', min: 0, max: 9, emoji: '🟤' },
+  { name: 'D', min: 10, max: 19, emoji: '🟣' },
+  { name: 'C', min: 20, max: 29, emoji: '🔵' },
+  { name: 'B', min: 30, max: 39, emoji: '🟢' },
+  { name: 'A', min: 40, max: 49, emoji: '🟡' },
+  { name: 'S', min: 50, max: 59, emoji: '🟠' },
+  { name: 'S+', min: 60, max: 69, emoji: '🔴' },
+  { name: 'NATIONAL LEVEL', min: 70, max: 79, emoji: '🌐' },
+  { name: 'SHADOW MONARCH', min: 80, max: 1000, emoji: '👑' }
+];
 
-// 🔐 Проверка на администратора
-async function isAdmin(ctx) {
-  const userId = ctx.from.id;
-  const chatMember = await ctx.getChatMember(userId);
-  return ['administrator', 'creator'].includes(chatMember.status);
+// 🎖 Определение ранга по очкам
+function getRank(points) {
+  return rankLevels.find(r => points >= r.min && points <= r.max);
 }
 
-// 👥 /vozroditsya — регистрация
+// 🏆 Достижения
+function getAchievements(points) {
+  const medals = [];
+  if (points >= 10) medals.push('🥉');
+  if (points >= 30) medals.push('🥈');
+  if (points >= 50) medals.push('🥇');
+  if (points >= 80) medals.push('🏆');
+  return medals.join(' ');
+}
+
+// ✅ Проверка админа
+async function isAdmin(ctx) {
+  try {
+    const member = await ctx.getChatMember(ctx.from.id);
+    return ['administrator', 'creator'].includes(member.status);
+  } catch (err) {
+    return false;
+  }
+}
+
+// 📂 Создание таблиц при запуске
+async function initTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id BIGINT PRIMARY KEY,
+      username TEXT,
+      points INT DEFAULT 0,
+      rank TEXT DEFAULT 'E'
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id SERIAL PRIMARY KEY,
+      from_id BIGINT,
+      to_id BIGINT,
+      action TEXT,
+      date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+initTables();
+
+// 🧩 /vozroditsya — регистрация
 bot.command('vozroditsya', async (ctx) => {
-  const userId = ctx.from.id;
-  const userName = ctx.from.username;
+  const id = ctx.from.id;
+  const username = ctx.from.username || ctx.from.first_name;
 
-  const client = await pool.connect();
-  try {
-    const check = await client.query('SELECT * FROM users WHERE tg_id = $1', [userId]);
-    if (check.rowCount > 0) {
-      return ctx.reply('Вы уже зарегистрированы.');
-    }
-
-    await client.query('INSERT INTO users (name, tg_id, rep) VALUES ($1, $2, 0)', [userName, userId]);
-    ctx.reply(`Вы успешно возродились! Ваш ID: ${userId}`);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при регистрации.');
-  } finally {
-    client.release();
+  const res = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  if (res.rows.length) {
+    ctx.reply('Вы уже зарегистрированы!');
+  } else {
+    await pool.query('INSERT INTO users (id, username) VALUES ($1, $2)', [id, username]);
+    ctx.reply('✅ Вы успешно зарегистрированы!');
   }
 });
 
-// 📊 /status — статус с рангом
+// 📊 /status
 bot.command('status', async (ctx) => {
-  const userId = ctx.from.id;
-  const client = await pool.connect();
+  const id = ctx.from.id;
+  const res = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
 
-  try {
-    const res = await client.query('SELECT rep FROM users WHERE tg_id = $1', [userId]);
-    if (res.rowCount === 0) {
-      return ctx.reply('Вы не зарегистрированы. Используйте /vozroditsya');
-    }
+  if (res.rows.length === 0) return ctx.reply('Вы не зарегистрированы. Используйте /vozroditsya');
 
-    const rep = res.rows[0].rep;
-    let rank = 'Новичок';
-    if (rep >= 10) rank = 'Легенда';
-    else if (rep >= 5) rank = 'Активный';
+  const user = res.rows[0];
+  const rankObj = getRank(user.points);
+  const achievements = getAchievements(user.points);
 
-    ctx.reply(`📊 Ваша репутация: ${rep}\n🏅 Ранг: ${rank}`);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при получении статуса.');
-  } finally {
-    client.release();
-  }
+  ctx.reply(`📊 Ваш статус:
+👤 Пользователь: @${user.username}
+🎯 Очки: ${user.points}
+🎖 Ранг: ${rankObj.emoji} ${rankObj.name}
+🏆 Достижения: ${achievements || '—'}`);
 });
 
-// 👤 /me — информация о себе
-bot.command('me', async (ctx) => {
-  const userId = ctx.from.id;
-  const client = await pool.connect();
-
-  try {
-    const res = await client.query('SELECT * FROM users WHERE tg_id = $1', [userId]);
-    if (res.rowCount === 0) return ctx.reply('Вы не зарегистрированы.');
-
-    const user = res.rows[0];
-    ctx.reply(`🧍‍♂️ Вы:\nID в БД: ${user.id}\nTelegram ID: ${user.tg_id}\nИмя: ${user.name}\nРепутация: ${user.rep}`);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при получении данных.');
-  } finally {
-    client.release();
-  }
-});
-
-// ➕ /rep <tg_id>
-bot.command('rep', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply('Только админы могут использовать эту команду.');
-  const args = ctx.message.text.split(' ');
-  const tg_id = args[1];
-
-  if (!tg_id) return ctx.reply('Укажите ID пользователя (tg_id).');
-
-  try {
-    const res = await pool.query('UPDATE users SET rep = rep + 1 WHERE tg_id = $1 RETURNING *', [tg_id]);
-    if (res.rowCount === 0) return ctx.reply('Пользователь не найден.');
-
-    await pool.query('INSERT INTO logs (action, target_id, actor_id) VALUES ($1, $2, $3)', ['rep', tg_id, ctx.from.id]);
-
-    ctx.reply(`✅ Репутация пользователя ${tg_id} увеличена. Сейчас: ${res.rows[0].rep}`);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при выполнении.');
-  }
-});
-
-// ➖ /unrep <tg_id>
-bot.command('unrep', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply('Только админы могут использовать эту команду.');
-  const args = ctx.message.text.split(' ');
-  const tg_id = args[1];
-
-  if (!tg_id) return ctx.reply('Укажите ID пользователя (tg_id).');
-
-  try {
-    const res = await pool.query('SELECT rep FROM users WHERE tg_id = $1', [tg_id]);
-    if (res.rowCount === 0) return ctx.reply('Пользователь не найден.');
-    if (res.rows[0].rep <= 0) return ctx.reply('Репутация уже 0.');
-
-    const updated = await pool.query('UPDATE users SET rep = rep - 1 WHERE tg_id = $1 RETURNING *', [tg_id]);
-    await pool.query('INSERT INTO logs (action, target_id, actor_id) VALUES ($1, $2, $3)', ['unrep', tg_id, ctx.from.id]);
-
-    ctx.reply(`➖ Репутация понижена. Сейчас: ${updated.rows[0].rep}`);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при выполнении.');
-  }
-});
-
-// 🗑 /delete <tg_id>
-bot.command('delete', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply('Только админы могут использовать эту команду.');
-  const args = ctx.message.text.split(' ');
-  const tg_id = args[1];
-
-  if (!tg_id) return ctx.reply('Укажите ID пользователя (tg_id).');
-
-  try {
-    const res = await pool.query('DELETE FROM users WHERE tg_id = $1 RETURNING *', [tg_id]);
-    if (res.rowCount === 0) return ctx.reply('Пользователь не найден.');
-
-    await pool.query('INSERT INTO logs (action, target_id, actor_id) VALUES ($1, $2, $3)', ['delete', tg_id, ctx.from.id]);
-
-    ctx.reply(`🗑 Пользователь ${tg_id} удалён.`);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при удалении.');
-  }
-});
-
-// 📋 /bd — список пользователей
-bot.command('bd', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply('Только админы могут использовать эту команду.');
-
-  const client = await pool.connect();
-  try {
-    const result = await client.query('SELECT * FROM users');
-    if (result.rowCount === 0) return ctx.reply('Нет пользователей.');
-
-    let msg = '📋 Список пользователей:\n\n';
-    result.rows.forEach(user => {
-      msg += `ID: ${user.id}, Имя: ${user.name}, TG ID: ${user.tg_id}, Репутация: ${user.rep}\n`;
-    });
-
-    ctx.reply(msg);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при выводе.');
-  } finally {
-    client.release();
-  }
-});
-
-// 📜 /log — последние действия
-bot.command('log', async (ctx) => {
-  if (!await isAdmin(ctx)) return ctx.reply('Только админы могут использовать эту команду.');
-
-  try {
-    const res = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 10');
-    if (res.rowCount === 0) return ctx.reply('Лог пуст.');
-
-    let msg = '🕓 Последние действия:\n';
-    res.rows.forEach(log => {
-      msg += `• ${log.action.toUpperCase()} | Target: ${log.target_id}, By: ${log.actor_id}, Время: ${log.timestamp.toLocaleString()}\n`;
-    });
-
-    ctx.reply(msg);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при загрузке лога.');
-  }
-});
-
-// 🏆 /top — рейтинг
+// 🏆 /top
 bot.command('top', async (ctx) => {
-  try {
-    const res = await pool.query('SELECT * FROM users ORDER BY rep DESC LIMIT 10');
-    if (res.rowCount === 0) return ctx.reply('Пока пусто.');
+  const res = await pool.query('SELECT * FROM users ORDER BY points DESC LIMIT 10');
+  const lines = res.rows.map((u, i) => {
+    const rankObj = getRank(u.points);
+    const achievements = getAchievements(u.points);
+    return `${i + 1}. @${u.username} — ${u.points} очков ${rankObj.emoji} ${rankObj.name} ${achievements}`;
+  });
 
-    let msg = '🏆 Топ пользователей:\n\n';
-    res.rows.forEach((user, i) => {
-      msg += `${i + 1}. ${user.name} — ${user.rep} очков\n`;
-    });
-
-    ctx.reply(msg);
-  } catch (err) {
-    console.error(err);
-    ctx.reply('Ошибка при получении топа.');
-  }
+  ctx.reply(`🏆 Топ пользователей:\n\n${lines.join('\n')}`);
 });
 
-// ℹ️ /info — справка
+// 📋 /info
 bot.command('info', (ctx) => {
   ctx.reply(`
-📘 Команды:
+📘 Доступные команды:
 
-👤 /me — показать информацию о себе
-👥 /vozroditsya — зарегистрироваться
-📊 /status — ваша репутация и ранг
+👤 /me — ваш Telegram ID
+📊 /status — ваш статус
+🧬 /vozroditsya — регистрация
+🏆 /top — топ пользователей
+ℹ️ /info — список всех команд
 
 🔧 Админ-команды:
-🧩 /vostat <id> — вручную добавить пользователя
-➕ /rep <tg_id> — повысить репутацию
-➖ /unrep <tg_id> — понизить репутацию
-🗑 /delete <tg_id> — удалить пользователя
-📋 /bd — список пользователей
-📜 /log — последние действия
-🏆 /top — топ пользователей
-🧪 /test — тест БД
-ℹ️ /info — команды
+➕ /rep <id> — добавить репутацию
+➖ /unrep <id> — отнять репутацию
+🗑 /delete <id> — удалить пользователя
+🛠 /rangedit <id> <очки> — задать очки вручную
+📋 /log — история действий
   `);
 });
 
-// 🧪 /test — проверка БД
-bot.command('test', async (ctx) => {
-  try {
-    await pool.query('SELECT NOW()');
-    ctx.reply('✅ Подключение к базе данных работает.');
-  } catch (err) {
-    console.error(err);
-    ctx.reply('❌ Ошибка подключения к базе.');
+// 👤 /me
+bot.command('me', (ctx) => {
+  ctx.reply(`Ваш Telegram ID: ${ctx.from.id}`);
+});
+
+// ➕ /rep
+bot.command('rep', async (ctx) => {
+  const parts = ctx.message.text.split(' ');
+  const targetId = parts[1];
+  if (!await isAdmin(ctx)) return ctx.reply('⛔️ Нет доступа');
+
+  const user = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
+  if (user.rows.length === 0) return ctx.reply('Пользователь не найден.');
+
+  const oldRank = getRank(user.rows[0].points).name;
+  const newPoints = user.rows[0].points + 1;
+
+  await pool.query('UPDATE users SET points = $1 WHERE id = $2', [newPoints, targetId]);
+  await pool.query('INSERT INTO logs (from_id, to_id, action) VALUES ($1, $2, $3)', [ctx.from.id, targetId, 'rep']);
+
+  const newRank = getRank(newPoints).name;
+  if (newRank !== oldRank) {
+    ctx.reply(`🎉 Пользователь получил новый ранг: ${getRank(newPoints).emoji} ${newRank}`);
   }
+
+  ctx.reply('Репутация добавлена.');
+});
+
+// ➖ /unrep
+bot.command('unrep', async (ctx) => {
+  const parts = ctx.message.text.split(' ');
+  const targetId = parts[1];
+  if (!await isAdmin(ctx)) return ctx.reply('⛔️ Нет доступа');
+
+  const user = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
+  if (user.rows.length === 0) return ctx.reply('Пользователь не найден.');
+
+  const oldRank = getRank(user.rows[0].points).name;
+  const newPoints = Math.max(user.rows[0].points - 1, 0);
+
+  await pool.query('UPDATE users SET points = $1 WHERE id = $2', [newPoints, targetId]);
+  await pool.query('INSERT INTO logs (from_id, to_id, action) VALUES ($1, $2, $3)', [ctx.from.id, targetId, 'unrep']);
+
+  const newRank = getRank(newPoints).name;
+  if (newRank !== oldRank) {
+    ctx.reply(`⚠️ Пользователь понижен до ранга: ${getRank(newPoints).emoji} ${newRank}`);
+  }
+
+  ctx.reply('Репутация уменьшена.');
+});
+
+// 🎯 /rangedit
+bot.command('rangedit', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply('⛔️ Нет доступа');
+  const [_, id, value] = ctx.message.text.split(' ');
+
+  if (!id || !value) return ctx.reply('Формат: /rangedit <id> <очки>');
+
+  await pool.query('UPDATE users SET points = $1 WHERE id = $2', [parseInt(value), id]);
+  ctx.reply(`✅ Очки пользователя обновлены до ${value}`);
+});
+
+// 🗑 /delete
+bot.command('delete', async (ctx) => {
+  const id = ctx.message.text.split(' ')[1];
+  if (!await isAdmin(ctx)) return ctx.reply('⛔️ Нет доступа');
+
+  await pool.query('DELETE FROM users WHERE id = $1', [id]);
+  await pool.query('INSERT INTO logs (from_id, to_id, action) VALUES ($1, $2, $3)', [ctx.from.id, id, 'delete']);
+  ctx.reply('Пользователь удалён.');
+});
+
+// 🗃 /log
+bot.command('log', async (ctx) => {
+  if (!await isAdmin(ctx)) return ctx.reply('⛔️ Нет доступа');
+  const res = await pool.query('SELECT * FROM logs ORDER BY date DESC LIMIT 10');
+
+  const lines = await Promise.all(res.rows.map(async (l) => {
+    const from = (await bot.telegram.getChat(l.from_id)).username || l.from_id;
+    const to = (await bot.telegram.getChat(l.to_id)).username || l.to_id;
+    return `${l.date.toLocaleString()} — ${from} → ${to} (${l.action})`;
+  }));
+
+  ctx.reply(`📋 Последние действия:\n\n${lines.join('\n')}`);
 });
 
 bot.launch();
-console.log('✅ Бот запущен');
